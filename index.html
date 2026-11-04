@@ -3,54 +3,33 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Three.jsデモ1</title>
-  
-  <!-- ① MindAR と Three.js のライブラリを読み込む -->
+  <title>Three.js AR Demo</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r123/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.1.4/dist/mindar-image-three.prod.js"></script>
-
   <style>
     body { margin: 0; overflow: hidden; }
     #container { width: 100vw; height: 100vh; position: relative; }
   </style>
 </head>
 <body>
-
-  <!-- AR映像を表示するコンテナ -->
   <div id="container"></div>
-
   <script>
     document.addEventListener("DOMContentLoaded", async () => {
-      // ② MindARの初期化設定
       const mindarembedder = new MindARThree({
         container: document.querySelector("#container"),
-        // マーカー情報ファイル（特徴点データ）のURLを指定
-        imageTargetSrc: 'https://cdn.jsdelivr.net/npm/mind-ar@1.1.4/examples/image-tracking/assets/card-example/card.mind',
+        imageTargetSrc: "https://cdn.jsdelivr.net/npm/mind-ar@1.1.4/examples/image-tracking/assets/card-example/card.mind",
       });
-
       const { renderer, scene, camera } = mindarembedder;
-
-      // ③ 表示したい3Dモデル（今回は青い立方体）を作成
-      const geometry = new THREE.BoxGeometry(0.5, 0.5, 0.5); // サイズ
-      const material = new THREE.MeshBasicMaterial({ color: 0x0000ff }); // 青色
+      const geometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+      const material = new THREE.MeshBasicMaterial({ color: 0x0000ff });
       const cube = new THREE.Mesh(geometry, material);
-
-      // 立方体の位置を少し調整（マーカーの真上に乗るように）
       cube.position.set(0, 0, 0.25);
-
-      // ④ マーカーを検知したときに連動するアンカー（親グループ）を作成
       const anchor = mindarembedder.addAnchor(0);
-      anchor.group.add(cube); // アンカーに立方体を追加
-
-      // ⑤ ARシステム（カメラとトラッキング）を起動
+      anchor.group.add(cube);
       await mindarembedder.start();
-
-      // ⑥ 描画ループ（アニメーション）
       renderer.setAnimationLoop(() => {
-        // 立方体をくるくる回転させる演出
         cube.rotation.x += 0.01;
         cube.rotation.y += 0.01;
-        
         renderer.render(scene, camera);
       });
     });
