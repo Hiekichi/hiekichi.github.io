@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Three.js AR Demo</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r123/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.1.4/dist/mindar-image-three.prod.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.1.4/dist/mindar-image.prod.js"></script>
   <style>
     body { margin: 0; overflow: hidden; }
     #container { width: 100vw; height: 100vh; position: relative; }
@@ -15,7 +15,8 @@
   <div id="container"></div>
   <script>
     document.addEventListener("DOMContentLoaded", async () => {
-      const mindarembedder = new MindARThree({
+      // 読み込み先がブラウザ用の MindAR になったため、呼び出し方を修正しています
+      const mindarembedder = new window.MINDAR.IMAGE.MindARThree({
         container: document.querySelector("#container"),
         imageTargetSrc: "https://cdn.jsdelivr.net/npm/mind-ar@1.1.4/examples/image-tracking/assets/card-example/card.mind",
       });
