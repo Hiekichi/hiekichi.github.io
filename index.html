@@ -133,7 +133,7 @@
       z-index: 10;
       color: rgba(255, 255, 255, 0.95);
       background: rgba(0, 0, 0, 0.6);
-      font-size: 64px;
+      font-size: 17px;
       line-height: 1.5;
       font-family: monospace;
       padding: 8px 10px;
@@ -376,17 +376,24 @@
         var video = document.querySelector("video");
         var canvas = document.querySelector("canvas");
         var lines = [];
+        lines.push(
+          "win:" + window.innerWidth + "x" + window.innerHeight +
+          " dpr=" + window.devicePixelRatio
+        );
         lines.push("AFRAME:" + (window.AFRAME ? "OK" : "NG"));
         lines.push("ARjs:" + (window.ARjs ? "OK" : "?"));
         if (video) {
           var cs = window.getComputedStyle(video);
+          var rect = video.getBoundingClientRect();
           lines.push(
             "video:" + video.videoWidth + "x" + video.videoHeight +
             " rs=" + video.readyState +
-            " paused=" + video.paused
+            " paused=" + video.paused +
+            " t=" + video.currentTime.toFixed(1)
           );
           lines.push(
             "video表示:" + video.offsetWidth + "x" + video.offsetHeight +
+            " 位置:" + Math.round(rect.x) + "," + Math.round(rect.y) +
             " display=" + cs.display +
             " opacity=" + cs.opacity +
             " z=" + cs.zIndex
@@ -403,7 +410,11 @@
           lines.push("video:なし");
         }
         if (canvas) {
-          lines.push("canvas:" + canvas.offsetWidth + "x" + canvas.offsetHeight);
+          var crect = canvas.getBoundingClientRect();
+          lines.push(
+            "canvas:" + canvas.offsetWidth + "x" + canvas.offsetHeight +
+            " 位置:" + Math.round(crect.x) + "," + Math.round(crect.y)
+          );
         } else {
           lines.push("canvas:なし");
         }
