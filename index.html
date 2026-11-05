@@ -8,7 +8,7 @@
 
   <!--
     ============================================================
-    使い方（開発者向け）
+    使い方（開発者向け）v2
     ============================================================
     1. この index.html をそのまま GitHub Pages に公開するだけで動きます。
        ※ カメラを使うため HTTPS が必須です（GitHub Pages は HTTPS なのでOK）。
@@ -16,7 +16,7 @@
 
     2. マーカーは AR.js 標準の「Hiroマーカー」を使っています。
        追加ファイルなしで認識できます。印刷用の画像は画面右上の
-       「使い方」ボタンから表示・保存できます。
+       「？」ボタンから表示・保存できます。
 
     3. 3Dモデルの差し替え方法（女の子のモデルなど）
        下の <script> 内にある MODEL_CONFIG の modelUrl に
@@ -25,6 +25,14 @@
        modelUrl を設定すると、サンプルの仮モデルは自動で非表示になり、
        指定したモデルが表示されます。大きさ・位置・向きは
        modelScale / modelPosition / modelRotation で調整してください。
+
+    v2での変更点（初版で真っ黒になる問題への対策）:
+    - ライブラリの組み合わせを AR.js 公式ドキュメントの実例どおりに変更
+      (A-Frame 1.6.0 + AR.js master版 aframe-ar.js)
+    - 依存を減らすため aframe-extras を削除し、アニメーション再生は
+      このファイル内の小さなコンポーネントで実装
+    - 画面下部に診断表示を追加。映像が届いていない場合は
+      どの段階で止まっているかを表示します。
     ============================================================
   -->
   <script>
@@ -39,10 +47,35 @@
     };
   </script>
 
-  <!-- A-Frame（3D表示）と AR.js（マーカー認識）。バージョンは動作実績のある組み合わせに固定 -->
+  <!-- A-Frame（3D表示）と AR.js（マーカー認識）
+       組み合わせはAR.js公式ドキュメントのMarker Based Exampleに合わせています -->
   <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.5.0/dist/aframe-extras.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.7/aframe/build/aframe-ar.js"></script>
+  <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+
+  <script>
+    // glTFモデルのアニメーションを再生するための小さなコンポーネント
+    // （aframe-extras の animation-mixer の代わり。依存を減らすため自前実装）
+    if (window.AFRAME) {
+      AFRAME.registerComponent("gltf-anim", {
+        init: function () {
+          this.mixer = null;
+          var self = this;
+          this.el.addEventListener("model-loaded", function (e) {
+            var model = e.detail && e.detail.model;
+            if (model && model.animations && model.animations.length) {
+              self.mixer = new AFRAME.THREE.AnimationMixer(model);
+              model.animations.forEach(function (clip) {
+                self.mixer.clipAction(clip).play();
+              });
+            }
+          });
+        },
+        tick: function (time, deltaTime) {
+          if (this.mixer) this.mixer.update(deltaTime / 1000);
+        },
+      });
+    }
+  </script>
 
   <style>
     html, body {
@@ -52,6 +85,15 @@
       font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
         "Noto Sans JP", sans-serif;
       background: #000;
+    }
+
+    /* AR.js が作るカメラ映像を確実に背面へ、3Dキャンバスをその前面へ */
+    video {
+      z-index: -1 !important;
+    }
+    canvas.a-canvas {
+      z-index: 1 !important;
+      background: transparent !important;
     }
 
     /* 画面上部のステータス表示 */
@@ -81,6 +123,23 @@
     }
     #status.error {
       background: rgba(220, 38, 38, 0.85);
+    }
+
+    /* 画面下部の診断表示（問題が起きたときの切り分け用） */
+    #diag {
+      position: fixed;
+      left: 8px;
+      bottom: 8px;
+      z-index: 10;
+      color: rgba(255, 255, 255, 0.75);
+      background: rgba(0, 0, 0, 0.4);
+      font-size: 11px;
+      font-family: monospace;
+      padding: 4px 8px;
+      border-radius: 6px;
+      max-width: 90vw;
+      white-space: pre-wrap;
+      pointer-events: none;
     }
 
     /* 使い方ボタン */
@@ -154,9 +213,10 @@
 <body>
   <!-- ステータス表示 -->
   <div id="hud">
-    <div id="status">カメラを許可して、Hiroマーカーを映してください…</div>
+    <div id="status">起動中…ライブラリとカメラを準備しています</div>
   </div>
   <button id="help-button" aria-label="使い方">？</button>
+  <div id="diag">diag: 初期化待ち</div>
 
   <!-- 使い方パネル -->
   <div id="help-panel">
@@ -190,7 +250,7 @@
     vr-mode-ui="enabled: false"
     loading-screen="enabled: false"
     renderer="antialias: true; alpha: true"
-    arjs="sourceType: webcam; trackingMethod: best; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 3x3;"
+    arjs="sourceType: webcam; debugUIEnabled: false;"
   >
     <!-- 明かり（差し替えたモデルにも効きます） -->
     <a-entity light="type: ambient; intensity: 0.9"></a-entity>
@@ -298,15 +358,43 @@
   <script>
     (function () {
       var statusEl = document.getElementById("status");
+      var diagEl = document.getElementById("diag");
       var marker = document.getElementById("marker");
       var customModel = document.getElementById("custom-model");
       var placeholder = document.getElementById("placeholder-model");
+      var videoReady = false;
 
       function setStatus(text, kind) {
         statusEl.textContent = text;
         statusEl.className = kind || "";
-        statusEl.id = "status";
       }
+
+      function updateDiag(extra) {
+        var video = document.querySelector("video");
+        var canvas = document.querySelector("canvas");
+        var lines = [];
+        lines.push("AFRAME: " + (window.AFRAME ? "OK" : "読み込み失敗"));
+        lines.push("ARjs: " + (window.ARjs ? "OK" : "未確認"));
+        if (video) {
+          lines.push(
+            "video: " +
+              video.videoWidth + "x" + video.videoHeight +
+              " readyState=" + video.readyState +
+              " paused=" + video.paused
+          );
+        } else {
+          lines.push("video: まだ作成されていません");
+        }
+        lines.push("canvas: " + (canvas ? "あり" : "なし"));
+        if (extra) lines.push(extra);
+        diagEl.textContent = "diag: " + lines.join(" / ");
+        return video;
+      }
+
+      // スクリプトエラーが起きたら診断表示に出す（原因の切り分け用）
+      window.addEventListener("error", function (e) {
+        updateDiag("error: " + (e.message || "不明なエラー"));
+      });
 
       // ----- モデルの差し替え適用 -----
       if (MODEL_CONFIG.modelUrl) {
@@ -316,10 +404,7 @@
         customModel.setAttribute("rotation", MODEL_CONFIG.modelRotation);
         customModel.setAttribute("visible", "true");
         if (MODEL_CONFIG.playAnimation) {
-          customModel.setAttribute(
-            "animation-mixer",
-            "clip: *; loop: repeat"
-          );
+          customModel.setAttribute("gltf-anim", "");
         }
         placeholder.setAttribute("visible", "false");
 
@@ -337,14 +422,45 @@
         });
       }
 
+      // ----- AR.js の映像準備完了イベント -----
+      var scene = document.querySelector("a-scene");
+      scene.addEventListener("arjs-video-loaded", function () {
+        videoReady = true;
+        setStatus("Hiroマーカーを映してください…", "");
+        updateDiag("arjs-video-loaded");
+      });
+
       // ----- マーカー認識の状態表示 -----
       marker.addEventListener("markerFound", function () {
         setStatus("マーカーを認識しました！", "found");
         if (navigator.vibrate) navigator.vibrate(50);
       });
       marker.addEventListener("markerLost", function () {
-        setStatus("カメラを許可して、Hiroマーカーを映してください…", "");
+        if (videoReady) setStatus("Hiroマーカーを映してください…", "");
       });
+
+      // ----- ウォッチドッグ：映像が来ない場合は段階を表示 -----
+      function watchdog() {
+        var video = updateDiag();
+        if (!window.AFRAME) {
+          setStatus("ライブラリ（A-Frame）の読み込みに失敗しました。通信環境を確認して再読み込みしてください", "error");
+          return;
+        }
+        if (!video) {
+          setStatus("カメラ映像が始まっていません。カメラ許可と通信環境を確認してください（下部の diag も確認）", "error");
+          return;
+        }
+        if (video.videoWidth === 0) {
+          setStatus("カメラは許可されましたが映像が流れていません（下部の diag を確認してください）", "error");
+          return;
+        }
+        videoReady = true;
+        if (statusEl.textContent.indexOf("起動中") === 0) {
+          setStatus("Hiroマーカーを映してください…", "");
+        }
+      }
+      setTimeout(watchdog, 6000);
+      setTimeout(watchdog, 12000);
 
       // ----- 使い方パネル -----
       var panel = document.getElementById("help-panel");
