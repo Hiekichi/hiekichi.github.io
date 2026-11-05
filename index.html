@@ -8,7 +8,7 @@
 
   <!--
     ============================================================
-    使い方（開発者向け）v2
+    使い方（開発者向け）v3
     ============================================================
     1. この index.html をそのまま GitHub Pages に公開するだけで動きます。
        ※ カメラを使うため HTTPS が必須です（GitHub Pages は HTTPS なのでOK）。
@@ -26,13 +26,11 @@
        指定したモデルが表示されます。大きさ・位置・向きは
        modelScale / modelPosition / modelRotation で調整してください。
 
-    v2での変更点（初版で真っ黒になる問題への対策）:
-    - ライブラリの組み合わせを AR.js 公式ドキュメントの実例どおりに変更
-      (A-Frame 1.6.0 + AR.js master版 aframe-ar.js)
-    - 依存を減らすため aframe-extras を削除し、アニメーション再生は
-      このファイル内の小さなコンポーネントで実装
-    - 画面下部に診断表示を追加。映像が届いていない場合は
-      どの段階で止まっているかを表示します。
+    v3での変更点（「一瞬映って真っ黒」への対策）:
+    - 診断表示を常時更新（1.5秒ごと）にし、video要素の表示サイズ・
+      表示/非表示・透明度・重なり順、canvasのサイズまで出すようにした
+    - videoが停止していたら自動で再生を試みる復旧処理を追加
+    - video要素の可視性をCSSで明示（visibility/opacity）
     ============================================================
   -->
   <script>
@@ -90,6 +88,8 @@
     /* AR.js が作るカメラ映像を確実に背面へ、3Dキャンバスをその前面へ */
     video {
       z-index: -1 !important;
+      visibility: visible !important;
+      opacity: 1 !important;
     }
     canvas.a-canvas {
       z-index: 1 !important;
@@ -131,13 +131,14 @@
       left: 8px;
       bottom: 8px;
       z-index: 10;
-      color: rgba(255, 255, 255, 0.75);
-      background: rgba(0, 0, 0, 0.4);
-      font-size: 11px;
+      color: rgba(255, 255, 255, 0.95);
+      background: rgba(0, 0, 0, 0.6);
+      font-size: 17px;
+      line-height: 1.5;
       font-family: monospace;
-      padding: 4px 8px;
+      padding: 8px 10px;
       border-radius: 6px;
-      max-width: 90vw;
+      max-width: 94vw;
       white-space: pre-wrap;
       pointer-events: none;
     }
@@ -363,37 +364,59 @@
       var customModel = document.getElementById("custom-model");
       var placeholder = document.getElementById("placeholder-model");
       var videoReady = false;
+      var lastError = "";
+      var playTried = "";
 
       function setStatus(text, kind) {
         statusEl.textContent = text;
         statusEl.className = kind || "";
       }
 
-      function updateDiag(extra) {
+      function updateDiag() {
         var video = document.querySelector("video");
         var canvas = document.querySelector("canvas");
         var lines = [];
-        lines.push("AFRAME: " + (window.AFRAME ? "OK" : "読み込み失敗"));
-        lines.push("ARjs: " + (window.ARjs ? "OK" : "未確認"));
+        lines.push("AFRAME:" + (window.AFRAME ? "OK" : "NG"));
+        lines.push("ARjs:" + (window.ARjs ? "OK" : "?"));
         if (video) {
+          var cs = window.getComputedStyle(video);
           lines.push(
-            "video: " +
-              video.videoWidth + "x" + video.videoHeight +
-              " readyState=" + video.readyState +
-              " paused=" + video.paused
+            "video:" + video.videoWidth + "x" + video.videoHeight +
+            " rs=" + video.readyState +
+            " paused=" + video.paused
           );
+          lines.push(
+            "video表示:" + video.offsetWidth + "x" + video.offsetHeight +
+            " display=" + cs.display +
+            " opacity=" + cs.opacity +
+            " z=" + cs.zIndex
+          );
+          // 映像があるのに止まっていたら再生を試みる
+          if (video.videoWidth > 0 && video.paused) {
+            var p = video.play();
+            playTried = "play試行済";
+            if (p && p.catch) {
+              p.catch(function () { playTried = "play失敗"; });
+            }
+          }
         } else {
-          lines.push("video: まだ作成されていません");
+          lines.push("video:なし");
         }
-        lines.push("canvas: " + (canvas ? "あり" : "なし"));
-        if (extra) lines.push(extra);
+        if (canvas) {
+          lines.push("canvas:" + canvas.offsetWidth + "x" + canvas.offsetHeight);
+        } else {
+          lines.push("canvas:なし");
+        }
+        if (playTried) lines.push(playTried);
+        if (lastError) lines.push("error: " + lastError);
         diagEl.textContent = "diag: " + lines.join(" / ");
         return video;
       }
 
       // スクリプトエラーが起きたら診断表示に出す（原因の切り分け用）
       window.addEventListener("error", function (e) {
-        updateDiag("error: " + (e.message || "不明なエラー"));
+        lastError = e.message || "不明なエラー";
+        updateDiag();
       });
 
       // ----- モデルの差し替え適用 -----
@@ -427,7 +450,7 @@
       scene.addEventListener("arjs-video-loaded", function () {
         videoReady = true;
         setStatus("Hiroマーカーを映してください…", "");
-        updateDiag("arjs-video-loaded");
+        updateDiag();
       });
 
       // ----- マーカー認識の状態表示 -----
@@ -439,9 +462,13 @@
         if (videoReady) setStatus("Hiroマーカーを映してください…", "");
       });
 
+      // ----- 診断表示を常時更新 -----
+      setInterval(updateDiag, 1500);
+      setTimeout(updateDiag, 500);
+
       // ----- ウォッチドッグ：映像が来ない場合は段階を表示 -----
       function watchdog() {
-        var video = updateDiag();
+        var video = document.querySelector("video");
         if (!window.AFRAME) {
           setStatus("ライブラリ（A-Frame）の読み込みに失敗しました。通信環境を確認して再読み込みしてください", "error");
           return;
