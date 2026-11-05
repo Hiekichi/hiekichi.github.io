@@ -1,1 +1,367 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <!-- スマホのブラウザで全画面表示するための設定 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>マーカーARアプリ</title>
 
+  <!--
+    ============================================================
+    使い方（開発者向け）
+    ============================================================
+    1. この index.html をそのまま GitHub Pages に公開するだけで動きます。
+       ※ カメラを使うため HTTPS が必須です（GitHub Pages は HTTPS なのでOK）。
+       ※ ライブラリは CDN から読み込むため、スマホ側の通信が必要です。
+
+    2. マーカーは AR.js 標準の「Hiroマーカー」を使っています。
+       追加ファイルなしで認識できます。印刷用の画像は画面右上の
+       「使い方」ボタンから表示・保存できます。
+
+    3. 3Dモデルの差し替え方法（女の子のモデルなど）
+       下の <script> 内にある MODEL_CONFIG の modelUrl に
+       glTF モデルの URL（例: "./girl.glb"）を指定するだけです。
+       .glb 形式（テクスチャ等が1ファイルに含まれる形式）を推奨します。
+       modelUrl を設定すると、サンプルの仮モデルは自動で非表示になり、
+       指定したモデルが表示されます。大きさ・位置・向きは
+       modelScale / modelPosition / modelRotation で調整してください。
+    ============================================================
+  -->
+  <script>
+    // ★★★ ここだけ編集すればモデルを差し替えられます ★★★
+    const MODEL_CONFIG = {
+      // 例: modelUrl: "./girl.glb",
+      modelUrl: "",
+      modelScale: "1 1 1",       // 大きさ (x y z)
+      modelPosition: "0 0 0",    // 位置   (x y z) ※ y は高さ
+      modelRotation: "0 0 0",    // 向き   (x y z) ※ 単位は度
+      playAnimation: true,       // モデル内のアニメーションを再生するか
+    };
+  </script>
+
+  <!-- A-Frame（3D表示）と AR.js（マーカー認識）。バージョンは動作実績のある組み合わせに固定 -->
+  <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.5.0/dist/aframe-extras.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.7/aframe/build/aframe-ar.js"></script>
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+        "Noto Sans JP", sans-serif;
+      background: #000;
+    }
+
+    /* 画面上部のステータス表示 */
+    #hud {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      pointer-events: none;
+    }
+    #status {
+      background: rgba(0, 0, 0, 0.65);
+      color: #fff;
+      font-size: 15px;
+      padding: 8px 16px;
+      border-radius: 999px;
+      text-align: center;
+    }
+    #status.found {
+      background: rgba(22, 163, 74, 0.85);
+    }
+    #status.error {
+      background: rgba(220, 38, 38, 0.85);
+    }
+
+    /* 使い方ボタン */
+    #help-button {
+      position: fixed;
+      top: 12px;
+      right: 12px;
+      z-index: 11;
+      width: 40px;
+      height: 40px;
+      border: none;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.9);
+      font-size: 18px;
+      cursor: pointer;
+    }
+
+    /* 使い方パネル */
+    #help-panel {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      background: rgba(0, 0, 0, 0.75);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      box-sizing: border-box;
+    }
+    #help-panel.open {
+      display: flex;
+    }
+    #help-card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 20px;
+      max-width: 420px;
+      width: 100%;
+      max-height: 90vh;
+      overflow-y: auto;
+      color: #222;
+      font-size: 14px;
+      line-height: 1.7;
+    }
+    #help-card h2 {
+      margin-top: 0;
+      font-size: 17px;
+    }
+    #help-card img.marker {
+      display: block;
+      width: 180px;
+      height: 180px;
+      margin: 8px auto;
+      border: 1px solid #ccc;
+    }
+    #help-close {
+      display: block;
+      width: 100%;
+      margin-top: 12px;
+      padding: 10px;
+      border: none;
+      border-radius: 8px;
+      background: #222;
+      color: #fff;
+      font-size: 15px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+
+<body>
+  <!-- ステータス表示 -->
+  <div id="hud">
+    <div id="status">カメラを許可して、Hiroマーカーを映してください…</div>
+  </div>
+  <button id="help-button" aria-label="使い方">？</button>
+
+  <!-- 使い方パネル -->
+  <div id="help-panel">
+    <div id="help-card">
+      <h2>使い方</h2>
+      <p>
+        1. 下の「Hiroマーカー」を印刷するか、別の画面に表示してください。<br />
+        2. このページを開いたスマホのカメラでマーカーを映すと、
+        マーカーの上に3Dモデルが表示されます。
+      </p>
+      <img
+        class="marker"
+        src="https://raw.githack.com/AR-js-org/AR.js/master/data/images/hiro.png"
+        alt="Hiroマーカー（印刷用）"
+      />
+      <p>
+        うまく認識しないときは、明るい場所で、マーカー全体が
+        画面に入るように少し離れて映してみてください。
+      </p>
+      <p>
+        ※ カメラが起動しない場合は、HTTPSで開いているか、
+        ブラウザのカメラ許可を確認してください。
+      </p>
+      <button id="help-close">閉じる</button>
+    </div>
+  </div>
+
+  <!-- ================= ARシーン ================= -->
+  <a-scene
+    embedded
+    vr-mode-ui="enabled: false"
+    loading-screen="enabled: false"
+    renderer="antialias: true; alpha: true"
+    arjs="sourceType: webcam; trackingMethod: best; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 3x3;"
+  >
+    <!-- 明かり（差し替えたモデルにも効きます） -->
+    <a-entity light="type: ambient; intensity: 0.9"></a-entity>
+    <a-entity
+      light="type: directional; intensity: 0.8"
+      position="1 2 1"
+    ></a-entity>
+
+    <!-- Hiroマーカー：認識すると中のコンテンツが表示される -->
+    <a-marker id="marker" preset="hiro" emitevents="true">
+      <!-- モデル全体の土台。ゆっくり回転させる -->
+      <a-entity
+        id="model-root"
+        animation="property: rotation; to: 0 360 0; loop: true; dur: 12000; easing: linear"
+      >
+        <!-- 影代わりの円盤 -->
+        <a-circle
+          radius="0.55"
+          rotation="-90 0 0"
+          position="0 0.01 0"
+          material="color: #000; opacity: 0.25; transparent: true"
+        ></a-circle>
+
+        <!--
+          ==========================================================
+          差し替え先：カスタム3Dモデル（glTF / GLB）
+          MODEL_CONFIG.modelUrl を設定すると、この要素が使われます。
+          通常はHTML側を書き換える必要はありません。
+          ==========================================================
+        -->
+        <a-entity id="custom-model" visible="false"></a-entity>
+
+        <!--
+          ==========================================================
+          サンプル仮モデル（プリミティブで作った簡易キャラクター）
+          MODEL_CONFIG.modelUrl が空のときだけ表示されます。
+          実モデルに差し替えたら、このブロックは削除して構いません。
+          ==========================================================
+        -->
+        <a-entity id="placeholder-model" position="0 0 0">
+          <!-- 台座 -->
+          <a-cylinder
+            radius="0.45"
+            height="0.08"
+            position="0 0.04 0"
+            color="#4f46e5"
+          ></a-cylinder>
+          <!-- ドレス（体） -->
+          <a-cone
+            radius-bottom="0.30"
+            radius-top="0.10"
+            height="0.55"
+            position="0 0.36 0"
+            color="#ec4899"
+          ></a-cone>
+          <!-- 頭 -->
+          <a-sphere radius="0.19" position="0 0.83 0" color="#ffd9b3"></a-sphere>
+          <!-- 髪 -->
+          <a-sphere
+            radius="0.20"
+            position="0 0.90 0"
+            scale="1 0.85 1"
+            color="#6d28d9"
+          ></a-sphere>
+          <a-box
+            width="0.40"
+            height="0.35"
+            depth="0.10"
+            position="0 0.72 -0.16"
+            color="#6d28d9"
+          ></a-box>
+          <!-- 目 -->
+          <a-sphere radius="0.025" position="-0.07 0.85 0.17" color="#111"></a-sphere>
+          <a-sphere radius="0.025" position="0.07 0.85 0.17" color="#111"></a-sphere>
+          <!-- 腕 -->
+          <a-cylinder
+            radius="0.04"
+            height="0.32"
+            position="-0.26 0.55 0"
+            rotation="0 0 35"
+            color="#ffd9b3"
+          ></a-cylinder>
+          <a-cylinder
+            radius="0.04"
+            height="0.32"
+            position="0.26 0.55 0"
+            rotation="0 0 -35"
+            color="#ffd9b3"
+          ></a-cylinder>
+          <!-- ラベル -->
+          <a-text
+            value="SAMPLE MODEL"
+            position="0 1.25 0"
+            align="center"
+            color="#ffffff"
+            scale="0.6 0.6 0.6"
+          ></a-text>
+        </a-entity>
+      </a-entity>
+    </a-marker>
+
+    <a-entity camera></a-entity>
+  </a-scene>
+
+  <script>
+    (function () {
+      var statusEl = document.getElementById("status");
+      var marker = document.getElementById("marker");
+      var customModel = document.getElementById("custom-model");
+      var placeholder = document.getElementById("placeholder-model");
+
+      function setStatus(text, kind) {
+        statusEl.textContent = text;
+        statusEl.className = kind || "";
+        statusEl.id = "status";
+      }
+
+      // ----- モデルの差し替え適用 -----
+      if (MODEL_CONFIG.modelUrl) {
+        customModel.setAttribute("gltf-model", MODEL_CONFIG.modelUrl);
+        customModel.setAttribute("scale", MODEL_CONFIG.modelScale);
+        customModel.setAttribute("position", MODEL_CONFIG.modelPosition);
+        customModel.setAttribute("rotation", MODEL_CONFIG.modelRotation);
+        customModel.setAttribute("visible", "true");
+        if (MODEL_CONFIG.playAnimation) {
+          customModel.setAttribute(
+            "animation-mixer",
+            "clip: *; loop: repeat"
+          );
+        }
+        placeholder.setAttribute("visible", "false");
+
+        customModel.addEventListener("model-loaded", function () {
+          setStatus("モデルを読み込みました。マーカーを映してください", "");
+        });
+        customModel.addEventListener("model-error", function () {
+          // 読み込みに失敗したら仮モデルに戻して知らせる
+          customModel.setAttribute("visible", "false");
+          placeholder.setAttribute("visible", "true");
+          setStatus(
+            "モデルの読み込みに失敗しました（URLを確認してください）",
+            "error"
+          );
+        });
+      }
+
+      // ----- マーカー認識の状態表示 -----
+      marker.addEventListener("markerFound", function () {
+        setStatus("マーカーを認識しました！", "found");
+        if (navigator.vibrate) navigator.vibrate(50);
+      });
+      marker.addEventListener("markerLost", function () {
+        setStatus("カメラを許可して、Hiroマーカーを映してください…", "");
+      });
+
+      // ----- 使い方パネル -----
+      var panel = document.getElementById("help-panel");
+      document
+        .getElementById("help-button")
+        .addEventListener("click", function () {
+          panel.classList.add("open");
+        });
+      document
+        .getElementById("help-close")
+        .addEventListener("click", function () {
+          panel.classList.remove("open");
+        });
+      panel.addEventListener("click", function (e) {
+        if (e.target === panel) panel.classList.remove("open");
+      });
+    })();
+  </script>
+</body>
+</html>
