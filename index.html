@@ -26,6 +26,11 @@
        指定したモデルが表示されます。大きさ・位置・向きは
        modelScale / modelPosition / modelRotation で調整してください。
 
+    v4での変更点（実機diagで判明したサイズ異常への対策）:
+    - video表示が2198x2931、canvasが3908x2931という異常な大きさに
+      なっていたため、表示サイズを画面サイズ（100vw x 100vh）に固定し、
+      描画バッファも画面サイズに合わせ直す処理を追加
+
     v3での変更点（「一瞬映って真っ黒」への対策）:
     - 診断表示を常時更新（1.5秒ごと）にし、video要素の表示サイズ・
       表示/非表示・透明度・重なり順、canvasのサイズまで出すようにした
@@ -80,20 +85,54 @@
       margin: 0;
       padding: 0;
       overflow: hidden;
+    }
+    /* v4の要：AR.js が body 自体に巨大な width と負の margin-left を
+       inline style で付けてしまい、画面全体が左へずれて真っ黒になる。
+       !important で画面サイズに固定して上書きする */
+    body {
+      width: 100vw !important;
+      height: 100vh !important;
+      margin: 0 !important;
+    }
+    body {
       font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
         "Noto Sans JP", sans-serif;
       background: #000;
     }
 
-    /* AR.js が作るカメラ映像を確実に背面へ、3Dキャンバスをその前面へ */
+    /* AR.js が作るカメラ映像を確実に背面へ、3Dキャンバスをその前面へ。
+       v4: AR.js の自動サイズ計算が端末によって異常な大きさになるため、
+       表示サイズは画面サイズに固定する（!important で inline style より優先） */
     video {
       z-index: -1 !important;
       visibility: visible !important;
       opacity: 1 !important;
     }
+    #arjs-video {
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      margin: 0 !important;
+      object-fit: cover !important;
+    }
+    /* AR.js/A-Frame がシーン要素自体を巨大化＆左へずらすことがあるため固定 */
+    a-scene {
+      width: 100vw !important;
+      height: 100vh !important;
+      margin: 0 !important;
+      top: 0 !important;
+      left: 0 !important;
+    }
     canvas.a-canvas {
       z-index: 1 !important;
       background: transparent !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      margin: 0 !important;
+      top: 0 !important;
+      left: 0 !important;
     }
 
     /* 画面上部のステータス表示 */
@@ -455,6 +494,25 @@
           );
         });
       }
+
+      // ----- v4: 描画バッファのサイズを画面サイズに合わせ直す -----
+      // AR.js の自動計算が巨大なキャンバスを作ると、スマホGPUの上限を
+      // 超えて真っ黒になることがあるため、実サイズに固定し直す。
+      function fitRenderer() {
+        var sc = document.querySelector("a-scene");
+        if (sc && sc.renderer) {
+          sc.renderer.setSize(window.innerWidth, window.innerHeight, false);
+        }
+      }
+      var sceneEl = document.querySelector("a-scene");
+      sceneEl.addEventListener("loaded", function () {
+        fitRenderer();
+        setTimeout(fitRenderer, 1000);
+        setTimeout(fitRenderer, 3000);
+      });
+      window.addEventListener("resize", function () {
+        setTimeout(fitRenderer, 350);
+      });
 
       // ----- AR.js の映像準備完了イベント -----
       var scene = document.querySelector("a-scene");
